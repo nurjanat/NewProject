@@ -9,3 +9,6 @@ class Movies(models.Model):
     video = models.FileField()
     poster = models.ImageField()
 
+class Comments(models.Model):
+    text = models.TextField()
+    film = models.ForeignKey(Movies,on_delete=models.CASCADE)
