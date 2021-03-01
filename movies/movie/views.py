@@ -1,54 +1,76 @@
-
-from django.contrib.sites.shortcuts import get_current_site
+from django.contrib.auth import authenticate, login
+from django.http import HttpResponse
 from django.shortcuts import render
 from .models import *
-from django.core.mail import EmailMessage
-from django.http import HttpResponse
-from django.shortcuts import render,redirect
-from django.template.loader import render_to_string
-
-
-from django.utils.encoding import force_bytes, force_text
-from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
-
-from .models import Movies
-
 from .forms import *
-from . tokens import account_activation_token
+from .filters import *
 
 
 # Create your views here.
 
 def movies_page(request):
     movies = Movies.objects.all()
-    return render(request,'movies/movies.html',{'movies':movies})
+    filters = MoviesFilter(request.GET, queryset=movies)
+    movies = filters.qs
+    return render(request,'movies/movies.html',{'movies':movies,'filters':filters})
 
 
 
+def comments_page(request):
+    comments = Comments.objects.all()
+    return render(request,'movies/comments.html',{'comments':comments})
 
-def register_page(request):
-    form = SignupForm()
+
+
+def movies_view(request,movie_id):
+    movies = Movies.objects.get(id=movie_id)
+    rates = movies.rate_set.all()
+    form1 = RatingsForm(initial={'film': movies})
+    total = 0
+    len_rates = len(rates)
+    comments = movies.comments_set.all()
+    form = CommentsForm(initial={'film': movies,})
+    for i in rates:
+        total += i.rate
     if request.method == 'POST':
-        form = SignupForm(request.POST)
-        if form.is_valid():
-            user = form.save(commit=False)
-            user.is_active = False
-            user.save()
+        form = CommentsForm(request.POST)
+        form1 = RatingsForm(request.POST)
 
-            current_site = get_current_site(request)
-            mail_subject = 'Activate your blog account. '
-            message = render_to_string('products/acc_active_email.html', {
-                'user': user,
-                'domain': current_site.domain,
-                'uid': urlsafe_base64_encode(force_bytes(user.pk)),
-                'token': account_activation_token.make_token(user),
-            })
-            to_email = form.cleaned_data.get('email')
-            email = EmailMessage(
-                mail_subject, message, to=[to_email]
-            )
-            email.send()
-            return HttpResponse('Please confirm your email address to comlete the registrations')
+        if form.is_valid() and form1.is_valid():
+            if 0 <= form1.cleaned_data['rate'] <= 5:
+                form.save()
+                form1.save()
+            else:
+                return HttpResponse('NOT OK RATE FOR FILM')
+    try:
+        context = {"movie":movies,'form':form,'comments':comments,'rates':round(total/len_rates,1), 'form1': form1}
+    except ZeroDivisionError:
+        context = {'rates': 0, 'form1': form1,'movie':movies,'comments':comments,}
+
+    return render(request,'movies/details_movies.html',context)
+
+
+def ratings_page(request,movie_id):
+    movie = Movies.objects.get(id=movie_id)
+    rates = movie.rate_set.all()
+    form = RatingsForm(initial={'film': Movies})
+    total = 0
+    len_rates = len(rates)
+    for i in rates:
+        total += i.rate
+    if request.method  == 'POST':
+        form = RatingsForm(request.POST)
+        if form.is_valid():
+            if 0<=form.cleaned_data['rate'] <=5:
+                form.save()
+            else:
+                return HttpResponse('NOT OK RATE FOR FILM')
+    try:
+        context = {'rates':round(total/len_rates,1),'form':form}
+    except ZeroDivisionError:
+        context = {'rates':0,'form':form}
+    return render(request,'movies/rating_page.html',{'form':form,})
+
 
 
 
